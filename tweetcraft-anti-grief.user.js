@@ -2,7 +2,7 @@
 // @name         TweetCraft Anti-Grief
 // @namespace    https://tweetcraft.jai.vin
 // @version      1.5.3
-// @description  Protect a region: press 1-4 at four corners to define a cube, scan it into a snapshot, and later revert any grief (destroyed / changed / added blocks, fire, water and lava) back to the snapshot state.
+// @description  Protect a region: press shift 1-2 at two corners to define an area, scan it into a snapshot, and later revert any grief (destroyed / changed / added blocks, fire, water and lava) back to the snapshot state.
 // @match        https://tweetcraft.jai.vin/r/*
 // @match        https://tweetcraft.jai.vin/play/*
 // @grant        unsafeWindow
