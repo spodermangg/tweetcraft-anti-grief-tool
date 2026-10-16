@@ -2,7 +2,7 @@
 
 A userscript for [TweetCraft](https://tweetcraft.jai.vin) that lets you snapshot a
 region of the world and later revert grief — destroyed, changed, or added blocks,
-including fire, water, and lava — back to the snapshot state.
+including fire, water, and lava — back to the snapshot state. By @andrestube123 and @vibecodingonsol
 
 **File:** `tweetcraft-anti-grief.user.js`
 
