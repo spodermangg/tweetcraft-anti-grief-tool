@@ -18,8 +18,8 @@ browser first. Tampermonkey is recommended.
 | Browser | Extension |
 | ------- | --------- |
 | Chrome / Edge / Brave / Opera | [Tampermonkey](https://www.tampermonkey.net/) |
-| Firefox | [Tampermonkey](https://www.tampermonkey.net/) or [Greasemonkey](https://addons.mozilla.org/firefox/addon/greasemonkey/) |
-| Safari | [Tampermonkey](https://www.tampermonkey.net/) or [Userscripts](https://apps.apple.com/app/userscripts/id1463298887) |
+| Firefox | [Tampermonkey](https://www.tampermonkey.net/) |
+| Safari | [Tampermonkey](https://www.tampermonkey.net/) |
 
 ### 2. Install the script
 
