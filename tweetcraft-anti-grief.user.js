@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TweetCraft Anti-Grief
 // @namespace    https://tweetcraft.jai.vin
-// @version      1.5.1
+// @version      1.5.3
 // @description  Protect a region: press 1-4 at four corners to define a cube, scan it into a snapshot, and later revert any grief (destroyed / changed / added blocks, fire, water and lava) back to the snapshot state.
 // @match        https://tweetcraft.jai.vin/r/*
 // @match        https://tweetcraft.jai.vin/play/*
@@ -708,19 +708,10 @@
       };
       snap._pad = res.pad;
       store.snaps.unshift(snap);
-      let saved = saveStore();
-      if (!saved) {
-        externOnly.add(snap.id);
-        saveStore();
-        try {
-          const stubs = store.snaps.filter(x => externOnly.has(x.id)).map(x => ({ id: x.id, name: x.name, ts: x.ts, ox: x.ox, oy: x.oy, oz: x.oz, sx: x.sx, sy: x.sy, sz: x.sz, count: x.count }));
-          saveExtern(Array.from(externOnly), stubs);
-          exportSnapshot(snap);
-        } catch (e) { }
-      }
+      const saved = persistOrExport(snap);
       el('ag-name').value = '';
       setProgress(0);
-      setStatus('Saved "' + name + '" (' + fmt(snap.count) + ' blocks)' + (saved ? '' : ' — too big for localStorage; exported as JSON (needed to restore)'), saved ? 'ok' : 'warn');
+      setStatus('Saved "' + name + '" (' + fmt(snap.count) + ' blocks, JSON exported)' + (saved ? '' : ' — too big for localStorage; keep the JSON (needed to restore)'), saved ? 'ok' : 'warn');
       toast('Snapshot "' + name + '" saved', 2200);
     } catch (e) {
       setProgress(0);
@@ -731,7 +722,6 @@
     render();
   }
 
-  const memoryOnly = new Set();
   const externOnly = new Set();
   const _ext = loadExtern();
   for (const id of _ext.ids) externOnly.add(id);
@@ -741,12 +731,35 @@
       if (!m.has(st.id)) { store.snaps.push(st); m.add(st.id); }
     }
   }
-  function keepInMemoryOnly(snap) {
-    memoryOnly.add(snap.id);
-    // roll back the persisted copy so localStorage never holds the oversized blob
-    store.snaps = store.snaps.filter((s) => s.id !== snap.id);
+
+  function rebuildStubs() {
+    const stubs = store.snaps
+      .filter(x => externOnly.has(x.id))
+      .map(x => ({ id: x.id, name: x.name, ts: x.ts, ox: x.ox, oy: x.oy, oz: x.oz,
+                   sx: x.sx, sy: x.sy, sz: x.sz, count: x.count }));
+    saveExtern(Array.from(externOnly), stubs);
+  }
+
+  // Persist the snapshot, and ALWAYS download a JSON backup (internal or
+  // external). External snapshots stay external for their lifetime. Returns
+  // true when the snapshot was persisted in localStorage, false when it is an
+  // external-only backup that needs its JSON to restore.
+  function persistOrExport(snap) {
+    if (externOnly.has(snap.id)) {
+      saveStore();
+      rebuildStubs();
+      exportSnapshot(snap);
+      return false;
+    }
+    if (saveStore()) {
+      exportSnapshot(snap);
+      return true;
+    }
+    externOnly.add(snap.id);
     saveStore();
-    store.snaps.unshift(snap);
+    rebuildStubs();
+    exportSnapshot(snap);
+    return false;
   }
 
   async function updateSnapshot(snap) {
@@ -763,18 +776,9 @@
       snap.ts = Date.now();
       snap.enc = encodePad(res.pad, res.sy, res.sz);
       snap._pad = res.pad;
-      let saved = saveStore();
-      if (!saved) {
-        externOnly.add(snap.id);
-        saveStore();
-        try {
-          const stubs = store.snaps.filter(x => externOnly.has(x.id)).map(x => ({ id: x.id, name: x.name, ts: x.ts, ox: x.ox, oy: x.oy, oz: x.oz, sx: x.sx, sy: x.sy, sz: x.sz, count: x.count }));
-          saveExtern(Array.from(externOnly), stubs);
-          exportSnapshot(snap);
-        } catch (e) { }
-      }
+      const persisted = persistOrExport(snap);
       setProgress(0);
-      setStatus('Updated "' + snap.name + '" (' + fmt(snap.count) + ' blocks)' + (saved ? '' : ' — too big; exported JSON (needed to restore)'), saved ? 'ok' : 'warn');
+      setStatus('Updated "' + snap.name + '" (' + fmt(snap.count) + ' blocks, JSON exported)' + (persisted ? '' : ' — keep the JSON (needed to restore)'), persisted ? 'ok' : 'warn');
     } catch (e) {
       setProgress(0);
       setStatus('Update ' + (e && e.message === 'cancelled' ? 'cancelled' : 'failed'), 'warn');
@@ -1000,12 +1004,11 @@
       const row = document.createElement('div');
       row.className = 'ag-srow';
       const when = new Date(s.ts).toLocaleString();
-      const mem = memoryOnly.has(s.id) ? ' · memory only' : '';
       const ext = externOnly.has(s.id) ? ' · ⚠ external JSON only (backup required to restore)' : '';
       row.innerHTML =
         '<div class="ag-sinfo">' +
         '<div class="ag-sname" title="' + esc(s.name) + '">' + esc(s.name) + '</div>' +
-        '<div class="ag-smeta">' + s.sx + '×' + s.sy + '×' + s.sz + ' · ' + fmt(s.count) + ' blocks · ' + when + mem + ext + '</div>' +
+        '<div class="ag-smeta">' + s.sx + '×' + s.sy + '×' + s.sz + ' · ' + fmt(s.count) + ' blocks · ' + when + ext + '</div>' +
         '</div>' +
         '<div class="ag-sbtns">' +
         '<button class="ag-act ag-rev" title="Revert the region to this snapshot">↩ Revert</button>' +
@@ -1015,7 +1018,7 @@
         '<button class="ag-act ag-del" title="Delete">✕</button>' +
         '</div>';
       row.querySelector('.ag-rev').addEventListener('click', async () => {
-        if (externOnly.has(s.id)) {
+        if (!s.enc) {
           toast('This snapshot requires the exported JSON. Select Import JSON to load it first.', 3200);
           if (confirm('Import JSON for snapshot "' + s.name + '"?')) {
             await importBackup();
@@ -1038,10 +1041,9 @@
       row.querySelector('.ag-del').addEventListener('click', () => {
         if (!confirm('WARNING: Delete snapshot "' + s.name + '" permanently?\n\n(This cannot be undone unless you have an exported JSON backup.)')) return;
         store.snaps = store.snaps.filter((x) => x.id !== s.id);
-        memoryOnly.delete(s.id);
         externOnly.delete(s.id);
         saveStore();
-        try { const stubs = store.snaps.filter(x => externOnly.has(x.id)).map(x => ({ id: x.id, name: x.name, ts: x.ts, ox: x.ox, oy: x.oy, oz: x.oz, sx: x.sx, sy: x.sy, sz: x.sz, count: x.count })); saveExtern(Array.from(externOnly), stubs); } catch (e) { }
+        rebuildStubs();
         render();
       });
       if (row.querySelector('.ag-exp')) row.querySelector('.ag-exp').addEventListener('click', () => exportSnapshot(s));
@@ -1257,20 +1259,28 @@
     try {
       const p = JSON.parse(t);
       if (p && Array.isArray(p.snaps)) {
-        const m = new Set(store.snaps.map(x => x.id));
         let c = 0;
+        const importedIds = [];
         for (const s of p.snaps) {
-          if (!m.has(s.id) && s.enc) {
-            const n = { id: s.id || uid(), name: s.name || "Imported", ts: s.ts || Date.now(), ox: s.ox | 0, oy: s.oy | 0, oz: s.oz | 0, sx: s.sx | 0, sy: s.sy | 0, sz: s.sz | 0, count: s.count || 0, enc: s.enc };
-            store.snaps.push(n); m.add(n.id); c++;
-          }
+          if (!s.enc) continue;
+          const n = { id: s.id || uid(), name: s.name || "Imported", ts: s.ts || Date.now(), ox: s.ox | 0, oy: s.oy | 0, oz: s.oz | 0, sx: s.sx | 0, sy: s.sy | 0, sz: s.sz | 0, count: s.count || 0, enc: s.enc };
+          // merge into an existing stub (same id or name) instead of skipping
+          const ex = store.snaps.findIndex(x => x.id === n.id || x.name === n.name);
+          if (ex >= 0) { store.snaps[ex] = Object.assign(store.snaps[ex], n); importedIds.push(store.snaps[ex].id); }
+          else { store.snaps.push(n); importedIds.push(n.id); }
+          c++;
         }
-        // move imported from externOnly if now full
-        for (const x of store.snaps) { if (x.enc && externOnly.has(x.id)) externOnly.delete(x.id); }
-        saveStore();
-        try { const stubs = store.snaps.filter(x=>externOnly.has(x.id)).map(x=>({id:x.id,name:x.name,ts:x.ts,ox:x.ox,oy:x.oy,oz:x.oz,sx:x.sx,sy:x.sy,sz:x.sz,count:x.count})); saveExtern(Array.from(externOnly), stubs); } catch(e){}
+        // the imported data is now in memory -> no longer external-only for this session
+        for (const id of importedIds) externOnly.delete(id);
+        const saved = saveStore();
+        if (!saved) {
+          // too big to persist: keep these as external stubs again (no re-download; user has the file)
+          for (const id of importedIds) externOnly.add(id);
+          saveStore();
+        }
+        rebuildStubs();
         render();
-        setStatus(`Imported ${c} snapshots`, "ok");
+        setStatus(`Imported ${c} snapshots` + (saved ? "" : " (too big for localStorage; re-import after refresh)"), saved ? "ok" : "warn");
         toast("Imported", 2000);
       } else throw 0;
     } catch (e) { setStatus("Import failed", "warn"); }
